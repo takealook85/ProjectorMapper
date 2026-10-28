@@ -60,8 +60,8 @@ export function toColumnMajor(m: Mat3): Float32Array {
 
 export function isConvex(q: Vec2[]): boolean {
   let sign = 0;
-  for (let i = 0; i < 4; i++) {
-    const a = q[i], b = q[(i + 1) % 4], c = q[(i + 2) % 4];
+  for (let i = 0; i < q.length; i++) {
+    const a = q[i], b = q[(i + 1) % q.length], c = q[(i + 2) % q.length];
     const cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
     if (Math.abs(cross) < 1e-9) continue;
     const s = Math.sign(cross);
@@ -71,14 +71,82 @@ export function isConvex(q: Vec2[]): boolean {
   return sign !== 0;
 }
 
-export function pointInQuad(pt: Vec2, q: Vec2[]): boolean {
-  if (!isConvex(q)) return false;
-  const inv = invert3(squareToQuad(q));
-  if (!inv) return false;
-  const uv = applyH(inv, pt.x, pt.y);
-  return uv.x >= 0 && uv.x <= 1 && uv.y >= 0 && uv.y <= 1;
+function cross(a: Vec2, b: Vec2, c: Vec2): number {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+/** Vero se i lati del poligono non si incrociano (può essere concavo). */
+export function isSimple(p: Vec2[]): boolean {
+  const n = p.length;
+  for (let i = 0; i < n; i++) {
+    const a = p[i], b = p[(i + 1) % n];
+    for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue; // lati adiacenti
+      const c = p[j], d = p[(j + 1) % n];
+      if (cross(c, d, a) * cross(c, d, b) < 0 && cross(a, b, c) * cross(a, b, d) < 0) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Omografia della superficie e sua inversa, oppure null se non è disegnabile.
+ * La prospettiva è data dai 4 angoli (`corners`, indici in `poly`, che devono formare un
+ * quadrilatero convesso); gli altri vertici modellano solo il contorno.
+ */
+export function surfaceMapping(poly: Vec2[], corners: number[]): { h: Mat3; inv: Mat3 } | null {
+  const q = corners.map((i) => poly[i]);
+  if (!isConvex(q) || !isSimple(poly)) return null;
+  const h = squareToQuad(q);
+  const inv = invert3(h);
+  if (!inv) return null;
+  // Tutti i vertici devono stare dalla stessa parte dell'orizzonte della prospettiva
+  const w = (p: Vec2) => Math.sign(inv[6] * p.x + inv[7] * p.y + inv[8]);
+  const ref = w(centroid(q));
+  if (poly.some((p) => w(p) !== ref)) return null;
+  return { h, inv };
+}
+
+/** Test pari/dispari: funziona anche con poligoni concavi. */
+export function pointInPolygon(pt: Vec2, p: Vec2[]): boolean {
+  let inside = false;
+  for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+    const a = p[i], b = p[j];
+    if ((a.y > pt.y) !== (b.y > pt.y) && pt.x < ((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+/** Triangolazione per "ear clipping" di un poligono semplice: indici a terne. */
+export function triangulate(p: Vec2[]): number[] {
+  let area = 0;
+  for (let i = 0; i < p.length; i++) {
+    const a = p[i], b = p[(i + 1) % p.length];
+    area += a.x * b.y - b.x * a.y;
+  }
+  const sgn = area < 0 ? -1 : 1;
+  const idx = p.map((_, i) => i);
+  const out: number[] = [];
+  const inTri = (q: Vec2, a: Vec2, b: Vec2, c: Vec2) =>
+    cross(a, b, q) * sgn > 0 && cross(b, c, q) * sgn > 0 && cross(c, a, q) * sgn > 0;
+
+  for (let guard = p.length * p.length; idx.length > 3 && guard > 0; guard--) {
+    for (let k = 0; k < idx.length; k++) {
+      const i0 = idx[(k + idx.length - 1) % idx.length], i1 = idx[k], i2 = idx[(k + 1) % idx.length];
+      const a = p[i0], b = p[i1], c = p[i2];
+      // Vertici concavi o allineati non sono "orecchie"
+      if (cross(a, b, c) * sgn <= 1e-9) continue;
+      if (idx.some((j) => j !== i0 && j !== i1 && j !== i2 && inTri(p[j], a, b, c))) continue;
+      out.push(i0, i1, i2);
+      idx.splice(k, 1);
+      break;
+    }
+  }
+  if (idx.length === 3) out.push(...idx);
+  return out;
 }
 
 export function centroid(q: Vec2[]): Vec2 {
-  return { x: (q[0].x + q[1].x + q[2].x + q[3].x) / 4, y: (q[0].y + q[1].y + q[2].y + q[3].y) / 4 };
+  const s = q.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+  return { x: s.x / q.length, y: s.y / q.length };
 }

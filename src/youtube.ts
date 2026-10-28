@@ -1,4 +1,4 @@
-import { isConvex, squareToQuad, type Vec2 } from './geometry';
+import { applyH, invert3, squareToQuad, surfaceMapping, type Vec2 } from './geometry';
 import { surfacePoints, type Scene, type Surface } from './state';
 
 /** Estrae l'ID (11 caratteri) e l'eventuale secondo di inizio da un link YouTube. */
@@ -129,12 +129,13 @@ export class YouTubeLayer {
 
   private place(e: Entry, scene: Scene, s: Surface, W: number, H: number): void {
     const c = s.content;
-    const face = surfacePoints(scene, s).map((p) => ({ x: p.x * W, y: p.y * H }));
-    if (!s.visible || !isConvex(face)) {
+    const poly = surfacePoints(scene, s).map((p) => ({ x: p.x * W, y: p.y * H }));
+    if (!s.visible || !surfaceMapping(poly, s.corners)) {
       e.wrap.style.visibility = 'hidden';
       return;
     }
     e.wrap.style.visibility = '';
+    const face = s.corners.map((i) => poly[i]);
 
     // Stessa rotazione/specchiatura dello shader: si permutano gli angoli della faccia
     const pts: Vec2[] = [0, 1, 2, 3].map((i) => {
@@ -156,5 +157,11 @@ export class YouTubeLayer {
     const m = squareToQuad(pts);
     const [a, b, cc, d, ee, f, g, hh, i] = [m[0] / ww, m[1] / wh, m[2], m[3] / ww, m[4] / wh, m[5], m[6] / ww, m[7] / wh, m[8]];
     e.wrap.style.transform = `matrix3d(${a},${d},0,${g},${b},${ee},0,${hh},0,0,1,0,${cc},${f},0,${i})`;
+
+    // Con vertici aggiuntivi il contorno ritaglia il player (nelle coordinate del contenitore)
+    const mi = poly.length > 4 ? invert3(m) : null;
+    e.wrap.style.clipPath = mi
+      ? `polygon(${poly.map((p) => { const q = applyH(mi, p.x, p.y); return `${q.x * ww}px ${q.y * wh}px`; }).join(',')})`
+      : '';
   }
 }

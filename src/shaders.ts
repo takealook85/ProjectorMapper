@@ -4,10 +4,11 @@ void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
 `;
 
 /**
- * Ogni superficie viene disegnata come un quadrilatero; per ogni pixel si calcola
- * l'omografia inversa (schermo -> coordinate della faccia uv in 0..1). Così la
- * prospettiva è esatta, senza la "piega" lungo la diagonale tipica del mapping affine
- * su due triangoli.
+ * Ogni superficie viene disegnata come poligono (triangolato); per ogni pixel si calcola
+ * l'omografia inversa dei 4 angoli (schermo -> coordinate della faccia uv, 0..1 dentro il
+ * quadrilatero degli angoli). Così la prospettiva è esatta, senza la "piega" lungo la
+ * diagonale tipica del mapping affine su due triangoli. Il contorno del poligono, già
+ * portato in coordinate uv, serve per la sfumatura e per gli effetti che seguono i bordi.
  */
 export const FRAG = /* glsl */ `#version 300 es
 precision highp float;
@@ -18,6 +19,10 @@ uniform float uTime, uSpeed, uScale, uDelay, uOpacity, uFeather, uAspect, uTexAs
 uniform int uEffect, uRot, uFlip, uFit, uHasTex;
 uniform vec3 uC1, uC2;
 uniform sampler2D uTex;
+
+const int MAX_POLY = 32;
+uniform vec2 uPoly[MAX_POLY];
+uniform int uPolyN;
 
 out vec4 outColor;
 
@@ -36,6 +41,19 @@ float noise(vec2 p) {
              mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
 }
 
+// Distanza dal contorno del poligono in coordinate uv, con l'asse x scalato di sx
+float polyDist(vec2 q, float sx) {
+  vec2 k = vec2(sx, 1.0);
+  float d = 1e9;
+  for (int i = 0; i < MAX_POLY; i++) {
+    if (i >= uPolyN) break;
+    vec2 a = uPoly[i] * k, ba = uPoly[(i + 1) % uPolyN] * k - a, pa = q * k - a;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-12), 0.0, 1.0);
+    d = min(d, length(pa - ba * h));
+  }
+  return d;
+}
+
 // Linea antialiasata: 1 quando d < w
 float line(float d, float w) {
   float aa = fwidth(d);
@@ -48,12 +66,12 @@ float square(float v) {
   return smoothstep(-fw, fw, v);
 }
 
-vec3 gridPattern(vec2 t, vec2 p, float asp) {
+// ed: distanza dal bordo con proporzioni fisiche (altezza = 1)
+vec3 gridPattern(vec2 t, vec2 p, float ed) {
   vec2 g = p * 8.0 * uScale;
   vec2 gl = abs(fract(g + 0.5) - 0.5);
   float grid = max(line(gl.x, 0.03), line(gl.y, 0.03));
-  float edge = min(min(t.x, 1.0 - t.x) * asp, min(t.y, 1.0 - t.y));
-  float border = line(edge, 0.012);
+  float border = line(ed, 0.012);
   float diag = max(line(abs(t.x - t.y), 0.004), line(abs(t.x + t.y - 1.0), 0.004));
   float circle = line(abs(length(p) - 0.4), 0.006);
   // Freccia "su" per riconoscere l'orientamento del contenuto
@@ -71,12 +89,12 @@ void main() {
   vec3 hp = uHinv * vec3(frag, 1.0);
   vec2 uv = hp.xy / hp.z;
 
-  float edgeDist = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
-  if (edgeDist < -0.002) discard;
-  float mask = uFeather > 0.0 ? smoothstep(0.0, uFeather, max(edgeDist, 0.0)) : 1.0;
+  float mask = uFeather > 0.0 ? smoothstep(0.0, uFeather, polyDist(uv, 1.0)) : 1.0;
+  float ed = polyDist(uv, uAspect);
 
-  // Trasformazione del contenuto (specchio + rotazione a passi di 90°)
-  vec2 t = clamp(uv, 0.0, 1.0);
+  // Trasformazione del contenuto (specchio + rotazione a passi di 90°).
+  // Fuori dal quadrilatero degli angoli t esce da 0..1 e gli effetti proseguono.
+  vec2 t = uv;
   if (uFlip == 1) t.x = 1.0 - t.x;
   if (uRot == 1) t = vec2(t.y, 1.0 - t.x);
   else if (uRot == 2) t = 1.0 - t;
@@ -89,7 +107,7 @@ void main() {
   vec3 col = vec3(0.0);
 
   if (uEffect == 0) {
-    col = gridPattern(t, p, asp);
+    col = gridPattern(t, p, ed);
 
   } else if (uEffect == 1) {
     col = uC1;
@@ -115,7 +133,7 @@ void main() {
     col = mix(uC1, uC2, f) * (0.6 + 0.4 * sin(v + time));
 
   } else if (uEffect == 6) {
-    float d = min(min(t.x, 1.0 - t.x) * asp, min(t.y, 1.0 - t.y));
+    float d = ed;
     float pulse = 0.5 + 0.5 * sin(time * 3.0);
     float glow = exp(-d * 28.0 / uScale) * (0.55 + 0.45 * pulse) + line(d, 0.01);
     float a = atan(p.y, p.x) / TAU + 0.5;
@@ -165,9 +183,10 @@ void main() {
         if (ra > 1.0) st.y = (st.y - 0.5) / ra + 0.5;
         else st.x = (st.x - 0.5) * ra + 0.5;
       }
-      col = texture(uTex, st).rgb;
+      bool out01 = any(lessThan(st, vec2(0.0))) || any(greaterThan(st, vec2(1.0)));
+      col = out01 ? vec3(0.0) : texture(uTex, st).rgb;
     } else {
-      col = gridPattern(t, p, asp) * 0.5;
+      col = gridPattern(t, p, ed) * 0.5;
     }
 
   } else if (uEffect == 13) {

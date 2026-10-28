@@ -1,4 +1,4 @@
-import { invert3, isConvex, squareToQuad, toColumnMajor } from './geometry';
+import { applyH, surfaceMapping, toColumnMajor, triangulate } from './geometry';
 import { mediaSize, type MediaLibrary } from './media';
 import { FRAG, VERT } from './shaders';
 import { effectIndex, surfacePoints, type Scene } from './state';
@@ -13,6 +13,7 @@ export interface RenderOptions {
 const UNIFORMS = [
   'uHinv', 'uRes', 'uTime', 'uSpeed', 'uScale', 'uDelay', 'uOpacity', 'uFeather', 'uAspect',
   'uTexAspect', 'uMaster', 'uEffect', 'uRot', 'uFlip', 'uFit', 'uHasTex', 'uC1', 'uC2', 'uTex',
+  'uPoly', 'uPolyN',
 ] as const;
 
 type UniformMap = Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null>;
@@ -110,12 +111,12 @@ export class Renderer {
     for (const s of scene.surfaces) {
       if (!s.visible) continue;
       const px = surfacePoints(scene, s).map((p) => ({ x: p.x * W, y: p.y * H }));
-      if (!isConvex(px)) continue;
-      const inv = invert3(squareToQuad(px));
-      if (!inv) continue;
+      const map = surfaceMapping(px, s.corners);
+      if (!map) continue;
+      const { inv } = map;
 
-      const clip = px.map((p) => [(p.x / W) * 2 - 1, 1 - (p.y / H) * 2]);
-      const verts = new Float32Array([...clip[0], ...clip[1], ...clip[2], ...clip[0], ...clip[2], ...clip[3]]);
+      const tris = triangulate(px);
+      const verts = new Float32Array(tris.flatMap((i) => [(px[i].x / W) * 2 - 1, 1 - (px[i].y / H) * 2]));
       gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
 
       const c = s.content;
@@ -133,6 +134,8 @@ export class Renderer {
       }
 
       gl.uniformMatrix3fv(this.u.uHinv, false, toColumnMajor(inv));
+      gl.uniform2fv(this.u.uPoly, px.flatMap((p) => { const q = applyH(inv, p.x, p.y); return [q.x, q.y]; }));
+      gl.uniform1i(this.u.uPolyN, px.length);
       gl.uniform1i(this.u.uEffect, effect);
       gl.uniform1f(this.u.uSpeed, c.speed);
       gl.uniform1f(this.u.uScale, Math.max(c.scale, 0.05));
@@ -147,7 +150,7 @@ export class Renderer {
       gl.uniform1i(this.u.uHasTex, hasTex);
       gl.uniform3fv(this.u.uC1, hexToRgb(c.c1));
       gl.uniform3fv(this.u.uC2, hexToRgb(c.c2));
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.drawArrays(gl.TRIANGLES, 0, tris.length);
     }
   }
 

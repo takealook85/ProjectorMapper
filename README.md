@@ -47,6 +47,8 @@ Con **Esporta/Importa** salvi la configurazione in JSON (i file multimediali non
 | N / doppio clic | nuova superficie |
 | Tab / V | superficie successiva / vertice successivo |
 | Frecce | sposta vertice selezionato (o il gruppo) |
+| Doppio clic su un lato / I | aggiunge un vertice al poligono |
+| X | rimuove il vertice selezionato (non i 4 angoli) |
 | D | stacca un vertice condiviso |
 | Canc | elimina superficie |
 | Ctrl+Z | annulla |
@@ -54,9 +56,13 @@ Con **Esporta/Importa** salvi la configurazione in JSON (i file multimediali non
 Trascinando un vertice vicino a un altro si aggancia e i due diventano condivisi
 (Shift durante il trascinamento disattiva l'aggancio).
 
+Le superfici sono poligoni fino a 32 vertici. I 4 vertici iniziali sono gli angoli prospettici
+(definiscono la prospettiva del contenuto); i vertici aggiunti modellano solo il contorno,
+ritagliando o estendendo il contenuto. Sono ammessi poligoni concavi.
+
 ## Struttura
 
-- `src/geometry.ts` – omografia quadrato→quadrilatero (la matematica della correzione prospettica)
+- `src/geometry.ts` – omografia quadrato→quadrilatero (la matematica della correzione prospettica), triangolazione dei poligoni
 - `src/shaders.ts` – shader WebGL2 con tutti gli effetti
 - `src/renderer.ts` – disegno delle superfici su GPU
 - `src/app.ts` – editor: maniglie, trascinamento, scorciatoie, annulla

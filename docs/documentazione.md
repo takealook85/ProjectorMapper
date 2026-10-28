@@ -56,17 +56,21 @@ Dal collegamento allo spettacolo servono sei passaggi; l'allineamento della scat
 
 ## Modifica delle superfici
 
-Ogni superficie è un quadrilatero definito da quattro vertici; i vertici possono essere condivisi tra più superfici, così uno spigolo comune resta sempre unito.
+Ogni superficie è un poligono: parte come quadrilatero e puoi aggiungere altri vertici fino a 32. I vertici possono essere condivisi tra più superfici, così uno spigolo comune resta sempre unito.
 
-**Vertici.** Le maniglie rotonde sono vertici di una sola superficie, quelle a rombo sono condivise. Mentre trascini un vertice compare un mirino giallo a tutto schermo che aiuta ad allinearlo agli spigoli reali.
+**Vertici.** Le maniglie rotonde sono vertici di una sola superficie, quelle a rombo sono condivise; le maniglie più piccole sono vertici di contorno (vedi sotto). Mentre trascini un vertice compare un mirino giallo a tutto schermo che aiuta ad allinearlo agli spigoli reali.
 
 **Aggancio.** Se rilasci un vertice a meno di 12 pixel da un altro, i due si uniscono (cerchio verde durante il trascinamento). Tieni premuto Shift per non agganciare. Per separare un vertice condiviso selezionalo e premi **D**: ogni superficie riceve la propria copia.
 
+**Vertici aggiuntivi.** Fai doppio clic su un lato per aggiungere un vertice in quel punto, oppure premi **I** (o il pulsante *+ Vertice*) per aggiungerlo a metà del lato che parte dal vertice selezionato. Se il lato è condiviso con un'altra superficie, il vertice viene aggiunto a entrambe e lo spigolo resta unito. **X** (o *Rimuovi vertice*) toglie il vertice selezionato.
+
+I quattro vertici iniziali restano gli **angoli prospettici**: definiscono la prospettiva del contenuto e non si possono rimuovere. Gli altri sono **vertici di contorno** e cambiano solo la forma: spostati verso l'interno ritagliano il contenuto, verso l'esterno lo estendono con la stessa prospettiva. Con la superficie selezionata il quadrilatero degli angoli è indicato da una linea gialla tratteggiata. Il poligono può essere concavo (per esempio a forma di L). Gli effetti che seguono i bordi (bordi al neon, cornice della griglia, sfumatura) usano il contorno del poligono; immagini e video fuori dal quadrilatero degli angoli restano neri.
+
 **Spostamento.** Trascinando l'interno di una superficie si sposta tutto il gruppo collegato, per esempio l'intero cubo. Con Alt premuto si sposta solo quella superficie.
 
-**Precisione.** Le frecce spostano il vertice selezionato di 1 pixel (Shift: 10 pixel). Se nessun vertice è selezionato spostano il gruppo. **V** passa al vertice successivo della superficie selezionata.
+**Precisione.** Le frecce spostano il vertice selezionato di 1 pixel (Shift: 10 pixel). Se nessun vertice è selezionato spostano il gruppo. **V** passa al vertice successivo della superficie selezionata, compresi i vertici di contorno.
 
-**Superfici non valide.** Un quadrilatero incrociato o concavo viene bordato di rosso con la scritta "non convessa" e non viene disegnato finché non lo correggi.
+**Superfici non valide.** Se i quattro angoli prospettici formano un quadrilatero incrociato o concavo, oppure se i lati del poligono si incrociano, la superficie viene bordata di rosso con la scritta "non valida" e non viene disegnata finché non la correggi.
 
 **Annulla.** Ctrl+Z annulla fino a 100 modifiche: trascinamenti, aggiunte, eliminazioni e cambi di effetto.
 
@@ -155,6 +159,7 @@ I tasti funzionano quando il cursore non è in un campo di testo; Esc esce dal c
 | Trascina un angolo | Sposta il vertice (Shift: senza aggancio) |
 | Trascina l'interno | Sposta il gruppo collegato (Alt: solo la superficie) |
 | Doppio clic sul vuoto | Nuova superficie in quel punto |
+| Doppio clic su un lato | Aggiunge un vertice in quel punto |
 | Clic sul vuoto | Deseleziona |
 | H | Mostra/nascondi interfaccia (modalità show) |
 | F | Schermo intero |
@@ -164,6 +169,8 @@ I tasti funzionano quando il cursore non è in un campo di testo; Esc esce dal c
 | Tab / Shift+Tab | Superficie successiva / precedente |
 | V | Vertice successivo della superficie selezionata |
 | Frecce | Sposta vertice o gruppo di 1 px (Shift: 10 px) |
+| I | Aggiunge un vertice a metà del lato dopo il vertice selezionato |
+| X | Rimuove il vertice selezionato (non i 4 angoli) |
 | D | Stacca il vertice condiviso selezionato |
 | Canc | Elimina la superficie selezionata |
 | Esc | Deseleziona il vertice |
@@ -202,7 +209,7 @@ La qualità del risultato dipende più dalla preparazione fisica che dagli effet
 | Problema | Causa probabile | Soluzione |
 | --- | --- | --- |
 | Schermata con "Errore di avvio: WebGL2 non disponibile" | Browser vecchio o accelerazione hardware disattivata | Aggiorna il browser; in Chrome/Edge attiva *Impostazioni → Sistema → Usa accelerazione grafica* |
-| Una superficie non compare ed è bordata di rosso | Quadrilatero incrociato o concavo | Riporta i vertici in ordine, senza linee che si incrociano |
+| Una superficie non compare ed è bordata di rosso | Angoli prospettici incrociati o concavi, oppure lati del poligono che si incrociano | Riporta i vertici in ordine, senza linee che si incrociano |
 | La griglia è storta sulla scatola | Angoli non allineati o keystone del proiettore attivo | Disattiva il keystone e riallinea con le frecce |
 | Cerchi schiacciati sulla faccia | *Proporzioni L/A* diverse dalla faccia reale | Imposta il rapporto larghezza/altezza reale |
 | Il video locale non parte | Formato non supportato dal browser | Converti in MP4 (H.264) o WebM |
@@ -237,14 +244,14 @@ Ogni superficie è descritta da un'omografia H, una matrice 3×3 che porta il qu
 \begin{pmatrix} x\,w \\ y\,w \\ w \end{pmatrix} = \begin{pmatrix} a & b & c \\ d & e & f \\ g & h & 1 \end{pmatrix} \begin{pmatrix} u \\ v \\ 1 \end{pmatrix}
 ```
 
-Gli otto coefficienti si ricavano in forma chiusa dai quattro angoli (metodo di Heckbert, in `geometry.ts`). Lo shader usa l'inversa: per ogni pixel dello schermo calcola le coordinate (u, v) del contenuto e decide il colore. Così la prospettiva è esatta, senza la piega lungo la diagonale tipica del mapping su due triangoli. Il livello YouTube applica la stessa matrice come trasformazione CSS `matrix3d`.
+Gli otto coefficienti si ricavano in forma chiusa dai quattro angoli (metodo di Heckbert, in `geometry.ts`). La matrice si calcola dai quattro angoli prospettici; il poligono completo viene triangolato (*ear clipping*) e disegnato, e lo shader usa l'inversa: per ogni pixel dello schermo calcola le coordinate (u, v) del contenuto e decide il colore. Fuori dal quadrilatero degli angoli (u, v) escono da 0..1 e gli effetti proseguono. Il contorno, portato anch'esso in coordinate (u, v), serve per la sfumatura e per gli effetti che seguono i bordi. Così la prospettiva è esatta, senza la piega lungo la diagonale tipica del mapping su due triangoli. Il livello YouTube applica la stessa matrice come trasformazione CSS `matrix3d` e ritaglia il poligono con `clip-path`.
 
 ### Struttura dei file
 
 | File | Contenuto |
 | --- | --- |
-| `src/geometry.ts` | Omografia, inversione, test di convessità e di appartenenza al quadrilatero |
-| `src/state.ts` | Modello della scena, elenco effetti, preset cubo, aggancio e distacco dei vertici, salvataggio |
+| `src/geometry.ts` | Omografia, inversione, validità del poligono, triangolazione, test di appartenenza |
+| `src/state.ts` | Modello della scena, elenco effetti, preset cubo, aggancio, distacco, inserimento e rimozione dei vertici, salvataggio |
 | `src/shaders.ts` | Shader WebGL2 con tutti gli effetti generati |
 | `src/renderer.ts` | Disegno delle superfici e gestione delle texture |
 | `src/youtube.ts` | Riconoscimento dei link e player YouTube deformati con CSS |

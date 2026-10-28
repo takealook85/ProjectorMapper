@@ -46,8 +46,13 @@ export interface Content {
 export interface Surface {
   id: string;
   name: string;
-  /** ID dei vertici: alto-sx, alto-dx, basso-dx, basso-sx. */
-  v: [string, string, string, string];
+  /** ID dei vertici del contorno, in ordine lungo il bordo. */
+  v: string[];
+  /**
+   * Indici in `v` dei 4 angoli che definiscono la prospettiva: alto-sx, alto-dx,
+   * basso-dx, basso-sx. Gli altri vertici modellano solo il contorno.
+   */
+  corners: [number, number, number, number];
   visible: boolean;
   opacity: number;
   feather: number;
@@ -63,6 +68,9 @@ export interface Scene {
   surfaces: Surface[];
 }
 
+/** Limite di vertici per superficie (dimensione dell'array uniform nello shader). */
+export const MAX_VERTICES = 32;
+
 export function uid(): string {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -76,7 +84,7 @@ export function defaultContent(over: Partial<Content> = {}): Content {
 }
 
 function makeSurface(name: string, v: Surface['v'], content: Partial<Content>): Surface {
-  return { id: uid(), name, v, visible: true, opacity: 1, feather: 0, aspect: 1, content: defaultContent(content) };
+  return { id: uid(), name, v, corners: [0, 1, 2, 3], visible: true, opacity: 1, feather: 0, aspect: 1, content: defaultContent(content) };
 }
 
 export function emptyScene(): Scene {
@@ -124,6 +132,48 @@ export function surfacePoints(scene: Scene, s: Surface): Vec2[] {
   return s.v.map((id) => scene.vertices[id]);
 }
 
+/** Vero se `vid` è uno dei 4 angoli prospettici di qualche superficie. */
+export function isCorner(scene: Scene, vid: string): boolean {
+  return scene.surfaces.some((s) => s.corners.some((i) => s.v[i] === vid));
+}
+
+/**
+ * Inserisce un nuovo vertice in p sul lato a–b, in tutte le superfici che hanno quel lato
+ * (così uno spigolo condiviso resta unito). Restituisce l'ID o null se non è possibile.
+ */
+export function insertVertex(scene: Scene, a: string, b: string, p: Vec2): string | null {
+  const edits: [Surface, number][] = [];
+  for (const s of scene.surfaces) {
+    const n = s.v.length;
+    const i = s.v.findIndex((v, k) => (v === a && s.v[(k + 1) % n] === b) || (v === b && s.v[(k + 1) % n] === a));
+    if (i < 0) continue;
+    if (n >= MAX_VERTICES) return null;
+    edits.push([s, i]);
+  }
+  if (!edits.length) return null;
+  const id = uid();
+  scene.vertices[id] = { ...p };
+  for (const [s, i] of edits) {
+    s.v.splice(i + 1, 0, id);
+    s.corners = s.corners.map((c) => (c > i ? c + 1 : c)) as Surface['corners'];
+  }
+  return id;
+}
+
+/** Rimuove un vertice di contorno (non un angolo) da tutte le superfici che lo usano. */
+export function removeVertex(scene: Scene, vid: string): boolean {
+  let removed = false;
+  for (const s of scene.surfaces) {
+    const i = s.v.indexOf(vid);
+    if (i < 0 || s.corners.includes(i)) continue;
+    s.v.splice(i, 1);
+    s.corners = s.corners.map((c) => (c > i ? c - 1 : c)) as Surface['corners'];
+    removed = true;
+  }
+  if (removed) pruneVertices(scene);
+  return removed;
+}
+
 /** Rimuove i vertici non più usati da nessuna superficie. */
 export function pruneVertices(scene: Scene): void {
   const used = new Set(scene.surfaces.flatMap((s) => s.v));
@@ -133,7 +183,7 @@ export function pruneVertices(scene: Scene): void {
 /** Unisce il vertice `from` in `into` (tutte le superfici che usavano `from` usano `into`). */
 export function mergeVertex(scene: Scene, from: string, into: string): void {
   for (const s of scene.surfaces) {
-    // Non unire due angoli della stessa superficie: degenererebbe il quadrilatero
+    // Non unire due vertici della stessa superficie: degenererebbe il poligono
     if (s.v.includes(from) && s.v.includes(into)) return;
   }
   for (const s of scene.surfaces) s.v = s.v.map((v) => (v === from ? into : v)) as Surface['v'];
@@ -190,7 +240,11 @@ export function validateScene(data: unknown): Scene | null {
   const d = data as Scene;
   if (!d || typeof d !== 'object' || typeof d.vertices !== 'object' || !Array.isArray(d.surfaces)) return null;
   for (const s of d.surfaces) {
-    if (!Array.isArray(s.v) || s.v.length !== 4 || s.v.some((v) => !d.vertices[v])) return null;
+    if (!Array.isArray(s.v) || s.v.length < 4 || s.v.length > MAX_VERTICES || s.v.some((v) => !d.vertices[v])) return null;
+    // Le scene salvate prima dei poligoni hanno solo i 4 angoli
+    s.corners ??= [0, 1, 2, 3];
+    const c = s.corners;
+    if (!Array.isArray(c) || c.length !== 4 || c.some((k, i) => !Number.isInteger(k) || k < 0 || k >= s.v.length || (i > 0 && k <= c[i - 1]))) return null;
     s.content = defaultContent(s.content);
     s.opacity ??= 1;
     s.feather ??= 0;

@@ -1,5 +1,5 @@
 import type { App } from './app';
-import { EFFECTS, type Content, type EffectId, type Surface } from './state';
+import { EFFECTS, MAX_VERTICES, type Content, type EffectId, type Surface } from './state';
 import { parseYouTube } from './youtube';
 
 type Child = Node | string | null | false | undefined;
@@ -263,7 +263,15 @@ export class Panel {
         }, 'Ritardi a cascata'),
       ),
       h('div', { class: 'buttons' },
+        h('button', {
+          onclick: () => app.insertVertexOnSelected(), disabled: s.v.length >= MAX_VERTICES,
+          title: 'Aggiunge un vertice a metà del lato dopo il vertice selezionato (I) – oppure doppio clic su un lato',
+        }, '+ Vertice'),
+        app.selVertex && !s.corners.some((i) => s.v[i] === app.selVertex) &&
+          h('button', { onclick: () => app.removeSelectedVertex(), title: 'X' }, 'Rimuovi vertice'),
         app.selVertex && h('button', { onclick: () => app.detachSelectedVertex(), title: 'D' }, 'Stacca vertice'),
+      ),
+      h('div', { class: 'buttons' },
         h('button', { class: 'danger', onclick: () => app.deleteSelected(), title: 'Canc' }, 'Elimina superficie'),
       ),
     );
@@ -276,6 +284,8 @@ export class Panel {
       ['Doppio clic sul vuoto', 'nuova superficie'],
       ['Frecce', 'sposta il vertice selezionato di 1 px (Shift = 10 px)'],
       ['V / Tab', 'vertice successivo / superficie successiva'],
+      ['Doppio clic su un lato', 'aggiunge un vertice (I: a metà del lato dopo quello selezionato)'],
+      ['X', 'rimuove il vertice selezionato (non i 4 angoli)'],
       ['D', 'stacca il vertice condiviso selezionato'],
       ['H', 'nascondi/mostra interfaccia (modalità show)'],
       ['F · B · G', 'schermo intero · blackout · griglia su tutto'],

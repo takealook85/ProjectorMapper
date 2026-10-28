@@ -1,9 +1,10 @@
-import { centroid, isConvex, pointInQuad, type Vec2 } from './geometry';
+import { centroid, pointInPolygon, surfaceMapping, type Vec2 } from './geometry';
 import { MediaLibrary } from './media';
 import { Renderer } from './renderer';
 import {
-  addCube, addQuad, connectedVertices, detachVertex, emptyScene, loadScene, mergeVertex,
-  pruneVertices, saveScene, surfacePoints, validateScene, type Scene, type Surface,
+  addCube, addQuad, connectedVertices, detachVertex, emptyScene, insertVertex, isCorner, loadScene,
+  mergeVertex, pruneVertices, removeVertex, saveScene, surfacePoints, validateScene,
+  type Scene, type Surface,
 } from './state';
 import { Panel } from './ui';
 import { YouTubeLayer } from './youtube';
@@ -155,6 +156,43 @@ export class App {
     this.changed(true);
   }
 
+  /** Inserisce un vertice a metà del lato che parte dal vertice selezionato (o del lato più lungo). */
+  insertVertexOnSelected(): void {
+    const s = this.surface;
+    if (!s) return;
+    const n = s.v.length;
+    const pts = surfacePoints(this.scene, s).map((p) => this.toPx(p));
+    const len = (k: number) => Math.hypot(pts[(k + 1) % n].x - pts[k].x, pts[(k + 1) % n].y - pts[k].y);
+    let i = this.selVertex ? s.v.indexOf(this.selVertex) : -1;
+    if (i < 0) i = pts.reduce((best, _, k) => (len(k) > len(best) ? k : best), 0);
+    const a = this.scene.vertices[s.v[i]], b = this.scene.vertices[s.v[(i + 1) % n]];
+    this.insertVertex(s.v[i], s.v[(i + 1) % n], { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  }
+
+  private insertVertex(a: string, b: string, p: Vec2): void {
+    this.snapshot();
+    const id = insertVertex(this.scene, a, b, p);
+    if (!id) {
+      this.undoStack.pop();
+      return;
+    }
+    this.selVertex = id;
+    this.changed(true);
+  }
+
+  /** Rimuove il vertice selezionato se non è uno dei 4 angoli prospettici. */
+  removeSelectedVertex(): void {
+    const s = this.surface, vid = this.selVertex;
+    if (!s || !vid || s.corners.some((i) => s.v[i] === vid)) return;
+    this.snapshot();
+    if (!removeVertex(this.scene, vid)) {
+      this.undoStack.pop();
+      return;
+    }
+    if (!this.scene.vertices[vid]) this.selVertex = null;
+    this.changed(true);
+  }
+
   clearScene(): void {
     this.snapshot();
     this.scene = emptyScene();
@@ -246,7 +284,7 @@ export class App {
     for (const s of this.scene.surfaces) {
       const pts = surfacePoints(this.scene, s).map((p) => this.toPx(p));
       const sel = s.id === this.selected;
-      const bad = !isConvex(pts);
+      const bad = !surfaceMapping(pts, s.corners);
       ctx.setLineDash(sel ? [] : [6, 5]);
       ctx.lineWidth = sel ? 2 : 1;
       ctx.strokeStyle = bad ? '#ff3b3b' : sel ? '#ffffff' : 'rgba(255,255,255,0.45)';
@@ -254,10 +292,21 @@ export class App {
       pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
       ctx.closePath();
       ctx.stroke();
+
+      // Con vertici aggiuntivi mostra il quadrilatero degli angoli che regge la prospettiva
+      if (sel && pts.length > 4) {
+        ctx.setLineDash([2, 4]);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(255,230,0,0.5)';
+        ctx.beginPath();
+        s.corners.forEach((k, i) => (i ? ctx.lineTo(pts[k].x, pts[k].y) : ctx.moveTo(pts[k].x, pts[k].y)));
+        ctx.closePath();
+        ctx.stroke();
+      }
       ctx.setLineDash([]);
 
       const cpt = centroid(pts);
-      const label = (s.visible ? '' : '◌ ') + s.name + (bad ? ' (non convessa)' : '');
+      const label = (s.visible ? '' : '◌ ') + s.name + (bad ? ' (non valida)' : '');
       ctx.font = '12px system-ui, sans-serif';
       const tw = ctx.measureText(label).width;
       ctx.fillStyle = sel ? 'rgba(0,0,0,0.75)' : 'rgba(0,0,0,0.5)';
@@ -275,7 +324,8 @@ export class App {
       const p = this.toPx(this.scene.vertices[id]);
       const shared = (useCount.get(id) ?? 0) > 1;
       const active = id === this.selVertex || (this.drag?.kind === 'vertex' && this.drag.id === id);
-      const r = selVerts.has(id) ? 7 : 5;
+      // I vertici di contorno (non angoli) hanno maniglie più piccole
+      const r = (selVerts.has(id) ? 7 : 5) * (isCorner(this.scene, id) ? 1 : 0.65);
       ctx.beginPath();
       if (shared) {
         ctx.moveTo(p.x, p.y - r - 1); ctx.lineTo(p.x + r + 1, p.y);
@@ -331,9 +381,31 @@ export class App {
   private hitSurface(px: Vec2): Surface | null {
     for (let i = this.scene.surfaces.length - 1; i >= 0; i--) {
       const s = this.scene.surfaces[i];
-      if (pointInQuad(px, surfacePoints(this.scene, s).map((p) => this.toPx(p)))) return s;
+      const pts = surfacePoints(this.scene, s).map((p) => this.toPx(p));
+      if (surfaceMapping(pts, s.corners) && pointInPolygon(px, pts)) return s;
     }
     return null;
+  }
+
+  /** Lato più vicino al punto (entro HIT_RADIUS); a parità vince la superficie selezionata. */
+  private hitEdge(px: Vec2): { a: string; b: string; p: Vec2 } | null {
+    let best: { a: string; b: string; p: Vec2 } | null = null, bestD = HIT_RADIUS;
+    const list = [...this.scene.surfaces].sort((x, y) => +(y.id === this.selected) - +(x.id === this.selected));
+    for (const s of list) {
+      const pts = surfacePoints(this.scene, s).map((p) => this.toPx(p));
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const t = Math.max(0, Math.min(1, ((px.x - a.x) * dx + (px.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+        const q = { x: a.x + dx * t, y: a.y + dy * t };
+        const d = Math.hypot(px.x - q.x, px.y - q.y);
+        if (d < bestD) {
+          bestD = d;
+          best = { a: s.v[i], b: s.v[(i + 1) % pts.length], p: this.toNorm(q) };
+        }
+      }
+    }
+    return best;
   }
 
   private onPointerDown(e: PointerEvent): void {
@@ -411,7 +483,11 @@ export class App {
   private onDoubleClick(e: MouseEvent): void {
     if (!this.uiVisible) return;
     const px = this.eventPos(e);
-    if (!this.hitSurface(px) && !this.hitVertex(px)) this.addSurface(this.toNorm(px));
+    if (this.hitVertex(px)) return;
+    // Doppio clic su un lato: nuovo vertice di contorno
+    const edge = this.hitEdge(px);
+    if (edge) this.insertVertex(edge.a, edge.b, edge.p);
+    else if (!this.hitSurface(px)) this.addSurface(this.toNorm(px));
   }
 
   private nudge(dx: number, dy: number): void {
@@ -449,6 +525,8 @@ export class App {
       case 'g': this.calibration = !this.calibration; this.panel.render(); break;
       case 'n': this.addSurface(); break;
       case 'd': this.detachSelectedVertex(); break;
+      case 'i': this.insertVertexOnSelected(); break;
+      case 'x': this.removeSelectedVertex(); break;
       case 'delete': this.deleteSelected(); break;
       case 'escape': this.selVertex = null; this.panel.render(); break;
       case 'tab': {
@@ -464,7 +542,7 @@ export class App {
         const s = this.surface;
         if (!s) break;
         const i = this.selVertex ? s.v.indexOf(this.selVertex) : -1;
-        this.selVertex = s.v[(i + 1) % 4];
+        this.selVertex = s.v[(i + 1) % s.v.length];
         this.panel.render();
         break;
       }
