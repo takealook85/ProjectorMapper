@@ -37,9 +37,11 @@ Servono Node.js 20 o successivo e un browser con WebGL2 (Chrome, Edge o Firefox 
 | Comando | Cosa fa |
 | --- | --- |
 | `npm install` | Installa le dipendenze (solo la prima volta) |
-| `npm run dev` | Avvia l'app su http://localhost:5173 e apre il browser |
+| `npm run dev` | Avvia l'app su http://localhost:5173, apre il browser ed elenca tutti gli indirizzi su cui è raggiungibile |
 | `npm run build` | Controlla i tipi e crea la versione statica nella cartella `dist/` |
 | `npm run preview` | Serve la versione di `dist/` per provarla |
+
+All'avvio (con `npm run dev`, `npm run preview` o `avvia.bat`) il server ascolta su tutte le interfacce di rete e nel terminale elenca gli indirizzi: *Local* (`http://localhost:5173`, solo da questo computer) e uno o più *Network* (per esempio `http://192.168.1.20:5173`), da cui l'app si apre anche da un altro computer, tablet o telefono sulla stessa rete. La scena salvata e i file caricati sono legati all'indirizzo: aprendo l'app da un indirizzo diverso si riparte da una scena vuota (usa *Esporta/Importa* per portarla). Se Windows chiede il permesso per Node.js nel firewall, consentilo solo sulle reti private.
 
 La cartella `dist/` si può copiare su qualsiasi server web statico. Va servita via HTTP: aprendo `index.html` direttamente dal disco il browser blocca i moduli JavaScript.
 
@@ -198,7 +200,7 @@ La scena si salva da sola nel browser circa 0,3 secondi dopo ogni modifica; alla
 
 *Esporta* scarica il file `mapping.json` con la configurazione; *Importa* lo ricarica. Serve per fare copie di sicurezza o portare un allineamento su un altro computer. Dopo l'importazione su un altro computer le superfici con file mancanti mostrano l'avviso "non trovato: ricaricalo".
 
-Il salvataggio è legato a browser e indirizzo: aprendo l'app con un altro browser, o su una porta diversa da 5173, la scena riparte da zero. Anche cancellare i dati di navigazione elimina la scena.
+Il salvataggio è legato a browser e indirizzo: aprendo l'app con un altro browser, da un altro indirizzo (per esempio l'IP di rete invece di `localhost`) o su una porta diversa da 5173, la scena riparte da zero. Anche cancellare i dati di navigazione elimina la scena.
 
 ## Consigli pratici per un buon mapping
 

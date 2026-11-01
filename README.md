@@ -9,9 +9,13 @@ Documentazione completa: [docs/documentazione.md](docs/documentazione.md).
 
 ```bash
 npm install
-npm run dev      # apre http://localhost:5173
+npm run dev      # apre http://localhost:5173 ed elenca gli indirizzi di rete
 npm run build    # build statica in dist/
 ```
+
+All'avvio il terminale mostra tutti gli indirizzi su cui l'app è pubblicata (Local e Network):
+gli indirizzi Network funzionano anche da altri dispositivi sulla stessa rete. Scena e file salvati
+sono legati all'indirizzo usato.
 
 ## Uso
 

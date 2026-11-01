@@ -19,7 +19,7 @@ if not exist "node_modules" (
     )
 )
 
-echo Avvio di Projection Mapper su http://localhost:5173
+echo Avvio di Projection Mapper: gli indirizzi (locale e di rete) compaiono qui sotto.
 echo Chiudi questa finestra o premi Ctrl+C per fermare il server.
 call npm run dev
 

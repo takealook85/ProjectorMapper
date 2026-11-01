@@ -12,7 +12,7 @@ User docs live in `docs/documentazione.md` (full manual, including an architectu
 
 ```bash
 npm install
-npm run dev        # Vite dev server on http://localhost:5173 (opens the browser)
+npm run dev        # Vite dev server on http://localhost:5173 (opens the browser; host: true lists all LAN addresses)
 npm run build      # tsc --noEmit (type check) + vite build into dist/
 npm run preview    # serve dist/
 npx tsc --noEmit   # type check only
