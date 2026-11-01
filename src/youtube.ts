@@ -1,5 +1,5 @@
 import { applyH, invert3, squareToQuad, surfaceMapping, type Vec2 } from './geometry';
-import { surfacePoints, type Scene, type Surface } from './state';
+import { shapeOutline, surfacePoints, type Scene, type Surface } from './state';
 
 /** Estrae l'ID (11 caratteri) e l'eventuale secondo di inizio da un link YouTube. */
 export function parseYouTube(input: string): { id: string; start: number } | null {
@@ -158,10 +158,14 @@ export class YouTubeLayer {
     const [a, b, cc, d, ee, f, g, hh, i] = [m[0] / ww, m[1] / wh, m[2], m[3] / ww, m[4] / wh, m[5], m[6] / ww, m[7] / wh, m[8]];
     e.wrap.style.transform = `matrix3d(${a},${d},0,${g},${b},${ee},0,${hh},0,0,1,0,${cc},${f},0,${i})`;
 
-    // Con vertici aggiuntivi il contorno ritaglia il player (nelle coordinate del contenitore)
-    const mi = poly.length > 4 ? invert3(m) : null;
-    e.wrap.style.clipPath = mi
-      ? `polygon(${poly.map((p) => { const q = applyH(mi, p.x, p.y); return `${q.x * ww}px ${q.y * wh}px`; }).join(',')})`
+    // Forma o vertici aggiuntivi ritagliano il player (nelle coordinate del contenitore).
+    // La forma è in coordinate della faccia: si porta sullo schermo e poi nel contenitore ruotato.
+    const shape = shapeOutline(s);
+    const faceH = squareToQuad(face);
+    const clip = shape ? shape.map((q) => applyH(faceH, q.x, q.y)) : poly.length > 4 ? poly : null;
+    const mi = clip ? invert3(m) : null;
+    e.wrap.style.clipPath = clip && mi
+      ? `polygon(${clip.map((p) => { const q = applyH(mi, p.x, p.y); return `${q.x * ww}px ${q.y * wh}px`; }).join(',')})`
       : '';
   }
 }

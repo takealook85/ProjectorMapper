@@ -21,6 +21,18 @@ export const EFFECTS = [
 
 export type EffectId = (typeof EFFECTS)[number]['id'];
 
+/** Forma visibile della superficie, inscritta nel quadrilatero degli angoli prospettici. */
+export const SHAPES = [
+  { id: 'outline', label: 'Contorno del poligono' },
+  { id: 'ellipse', label: 'Ellisse inscritta' },
+  { id: 'free', label: 'Mano libera' },
+] as const;
+
+export type ShapeId = (typeof SHAPES)[number]['id'];
+
+/** Limite di punti della forma a mano libera (dimensione dell'array uniform nello shader). */
+export const MAX_FREEFORM = 96;
+
 export function effectIndex(id: EffectId): number {
   return EFFECTS.findIndex((e) => e.id === id);
 }
@@ -58,6 +70,10 @@ export interface Surface {
   feather: number;
   /** Rapporto larghezza/altezza reale della faccia fisica (1 per un cubo). */
   aspect: number;
+  /** Forma che ritaglia il contenuto (il poligono resta comunque il limite esterno). */
+  shape: ShapeId;
+  /** Contorno a mano libera in coordinate della faccia (0..1 = quadrilatero degli angoli). */
+  freeform: Vec2[];
   content: Content;
 }
 
@@ -84,7 +100,7 @@ export function defaultContent(over: Partial<Content> = {}): Content {
 }
 
 function makeSurface(name: string, v: Surface['v'], content: Partial<Content>): Surface {
-  return { id: uid(), name, v, corners: [0, 1, 2, 3], visible: true, opacity: 1, feather: 0, aspect: 1, content: defaultContent(content) };
+  return { id: uid(), name, v, corners: [0, 1, 2, 3], visible: true, opacity: 1, feather: 0, aspect: 1, shape: 'outline', freeform: [], content: defaultContent(content) };
 }
 
 export function emptyScene(): Scene {
@@ -126,6 +142,22 @@ export function addCube(scene: Scene, screenAspect: number): Surface[] {
   ];
   scene.surfaces.push(...faces);
   return faces;
+}
+
+/**
+ * Contorno della forma in coordinate della faccia, oppure null se la superficie usa il
+ * contorno del poligono. L'ellisse è il cerchio inscritto nel quadrato unitario: portato
+ * sullo schermo dall'omografia tocca i quattro lati del quadrilatero degli angoli.
+ */
+export function shapeOutline(s: Surface, segments = 64): Vec2[] | null {
+  if (s.shape === 'ellipse') {
+    return Array.from({ length: segments }, (_, i) => {
+      const a = (i / segments) * Math.PI * 2;
+      return { x: 0.5 + 0.5 * Math.cos(a), y: 0.5 + 0.5 * Math.sin(a) };
+    });
+  }
+  if (s.shape === 'free' && s.freeform.length >= 3) return s.freeform;
+  return null;
 }
 
 export function surfacePoints(scene: Scene, s: Surface): Vec2[] {
@@ -250,6 +282,10 @@ export function validateScene(data: unknown): Scene | null {
     s.feather ??= 0;
     s.aspect ??= 1;
     s.visible ??= true;
+    if (!SHAPES.some((x) => x.id === s.shape)) s.shape = 'outline';
+    s.freeform = Array.isArray(s.freeform)
+      ? s.freeform.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y)).slice(0, MAX_FREEFORM)
+      : [];
   }
   return { version: 1, vertices: d.vertices, surfaces: d.surfaces };
 }

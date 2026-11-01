@@ -1,10 +1,10 @@
-import { centroid, pointInPolygon, surfaceMapping, type Vec2 } from './geometry';
+import { applyH, centroid, pointInPolygon, simplifyPath, surfaceMapping, type Vec2 } from './geometry';
 import { MediaLibrary } from './media';
 import { Renderer } from './renderer';
 import {
   addCube, addQuad, connectedVertices, detachVertex, emptyScene, insertVertex, isCorner, loadScene,
-  mergeVertex, pruneVertices, removeVertex, saveScene, surfacePoints, validateScene,
-  type Scene, type Surface,
+  MAX_FREEFORM, mergeVertex, pruneVertices, removeVertex, saveScene, shapeOutline, surfacePoints,
+  validateScene, type Scene, type ShapeId, type Surface,
 } from './state';
 import { Panel } from './ui';
 import { YouTubeLayer } from './youtube';
@@ -29,10 +29,14 @@ export class App {
   blackout = false;
   calibration = false;
   master = 1;
+  /** Modalità disegno: il prossimo trascinamento traccia la forma a mano libera. */
+  drawing = false;
 
   private ctx: CanvasRenderingContext2D;
   private drag: Drag | null = null;
   private snapTarget: string | null = null;
+  /** Tracciato a mano libera in corso, in pixel. */
+  private stroke: Vec2[] | null = null;
   private undoStack: string[] = [];
   private saveTimer = 0;
   private t0 = performance.now();
@@ -105,6 +109,7 @@ export class App {
   }
 
   select(id: string | null): void {
+    if (id !== this.selected) this.drawing = false;
     this.selected = id;
     if (this.selVertex && !this.surface?.v.includes(this.selVertex)) this.selVertex = null;
     this.panel.render();
@@ -190,6 +195,49 @@ export class App {
       return;
     }
     if (!this.scene.vertices[vid]) this.selVertex = null;
+    this.changed(true);
+  }
+
+  /** Cambia la forma della superficie selezionata; "mano libera" senza tracciato avvia il disegno. */
+  setShape(shape: ShapeId): void {
+    const s = this.surface;
+    if (!s) return;
+    this.snapshot();
+    s.shape = shape;
+    this.drawing = shape === 'free' && s.freeform.length < 3;
+    this.changed(true);
+  }
+
+  startDrawing(): void {
+    if (!this.surface) return;
+    this.drawing = true;
+    this.selVertex = null;
+    this.panel.render();
+  }
+
+  cancelDrawing(): void {
+    this.drawing = false;
+    this.stroke = null;
+    this.panel.render();
+  }
+
+  /** Converte il tracciato in coordinate della faccia e lo salva come forma a mano libera. */
+  private finishStroke(): void {
+    const s = this.surface, stroke = this.stroke;
+    this.stroke = null;
+    this.drawing = false;
+    const map = s && surfaceMapping(surfacePoints(this.scene, s).map((p) => this.toPx(p)), s.corners);
+    const pts = stroke ? simplifyPath(stroke, MAX_FREEFORM) : [];
+    if (!s || !map || pts.length < 3) {
+      this.panel.render();
+      return;
+    }
+    this.snapshot();
+    s.freeform = pts.map((p) => {
+      const q = applyH(map.inv, p.x, p.y);
+      return { x: +q.x.toFixed(4), y: +q.y.toFixed(4) };
+    });
+    s.shape = 'free';
     this.changed(true);
   }
 
@@ -284,7 +332,8 @@ export class App {
     for (const s of this.scene.surfaces) {
       const pts = surfacePoints(this.scene, s).map((p) => this.toPx(p));
       const sel = s.id === this.selected;
-      const bad = !surfaceMapping(pts, s.corners);
+      const map = surfaceMapping(pts, s.corners);
+      const bad = !map;
       ctx.setLineDash(sel ? [] : [6, 5]);
       ctx.lineWidth = sel ? 2 : 1;
       ctx.strokeStyle = bad ? '#ff3b3b' : sel ? '#ffffff' : 'rgba(255,255,255,0.45)';
@@ -293,8 +342,23 @@ export class App {
       ctx.closePath();
       ctx.stroke();
 
-      // Con vertici aggiuntivi mostra il quadrilatero degli angoli che regge la prospettiva
-      if (sel && pts.length > 4) {
+      // Forma inscritta (ellisse o mano libera), portata sullo schermo dall'omografia
+      const shape = map && !(sel && this.drawing) ? shapeOutline(s) : null;
+      if (map && shape) {
+        ctx.setLineDash(sel ? [] : [4, 4]);
+        ctx.lineWidth = sel ? 1.5 : 1;
+        ctx.strokeStyle = sel ? '#00e5ff' : 'rgba(0,229,255,0.5)';
+        ctx.beginPath();
+        shape.forEach((q, i) => {
+          const p = applyH(map.h, q.x, q.y);
+          if (i) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y);
+        });
+        ctx.closePath();
+        ctx.stroke();
+      }
+
+      // Con vertici aggiuntivi o una forma mostra il quadrilatero degli angoli che regge la prospettiva
+      if (sel && (pts.length > 4 || shape || this.drawing)) {
         ctx.setLineDash([2, 4]);
         ctx.lineWidth = 1;
         ctx.strokeStyle = 'rgba(255,230,0,0.5)';
@@ -339,6 +403,27 @@ export class App {
       ctx.lineWidth = 1.5;
       ctx.strokeStyle = selVerts.has(id) ? '#ffe600' : 'rgba(255,255,255,0.7)';
       ctx.stroke();
+    }
+
+    if (this.stroke && this.stroke.length > 1) {
+      ctx.setLineDash([]);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#00e5ff';
+      ctx.beginPath();
+      this.stroke.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+      ctx.stroke();
+    }
+
+    if (this.drawing) {
+      const msg = 'Disegna la forma tenendo premuto il mouse · Esc annulla';
+      ctx.font = '13px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const tw = ctx.measureText(msg).width;
+      ctx.fillStyle = 'rgba(0,0,0,0.75)';
+      ctx.fillRect(w / 2 - tw / 2 - 10, 14, tw + 20, 26);
+      ctx.fillStyle = '#00e5ff';
+      ctx.fillText(msg, w / 2, 27);
     }
 
     if (this.snapTarget && this.scene.vertices[this.snapTarget]) {
@@ -411,6 +496,11 @@ export class App {
   private onPointerDown(e: PointerEvent): void {
     if (!this.uiVisible || e.button !== 0) return;
     const px = this.eventPos(e);
+    if (this.drawing) {
+      this.stroke = [px];
+      this.overlay.setPointerCapture(e.pointerId);
+      return;
+    }
     const vid = this.hitVertex(px);
 
     if (vid) {
@@ -445,6 +535,11 @@ export class App {
   }
 
   private onPointerMove(e: PointerEvent): void {
+    if (this.stroke) {
+      const px = this.eventPos(e), last = this.stroke[this.stroke.length - 1];
+      if (Math.hypot(px.x - last.x, px.y - last.y) >= 2) this.stroke.push(px);
+      return;
+    }
     if (!this.drag) return;
     const px = this.eventPos(e);
     if (this.drag.kind === 'vertex') {
@@ -468,6 +563,11 @@ export class App {
   }
 
   private onPointerUp(e: PointerEvent): void {
+    if (this.stroke) {
+      this.overlay.releasePointerCapture(e.pointerId);
+      this.finishStroke();
+      return;
+    }
     if (!this.drag) return;
     if (this.drag.kind === 'vertex' && this.snapTarget) {
       mergeVertex(this.scene, this.drag.id, this.snapTarget);
@@ -481,7 +581,7 @@ export class App {
   }
 
   private onDoubleClick(e: MouseEvent): void {
-    if (!this.uiVisible) return;
+    if (!this.uiVisible || this.drawing) return;
     const px = this.eventPos(e);
     if (this.hitVertex(px)) return;
     // Doppio clic su un lato: nuovo vertice di contorno
@@ -528,7 +628,10 @@ export class App {
       case 'i': this.insertVertexOnSelected(); break;
       case 'x': this.removeSelectedVertex(); break;
       case 'delete': this.deleteSelected(); break;
-      case 'escape': this.selVertex = null; this.panel.render(); break;
+      case 'escape':
+        if (this.drawing) this.cancelDrawing();
+        else { this.selVertex = null; this.panel.render(); }
+        break;
       case 'tab': {
         e.preventDefault();
         const list = this.scene.surfaces;

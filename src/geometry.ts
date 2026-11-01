@@ -150,3 +150,44 @@ export function centroid(q: Vec2[]): Vec2 {
   const s = q.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
   return { x: s.x / q.length, y: s.y / q.length };
 }
+
+function segmentDist(p: Vec2, a: Vec2, b: Vec2): number {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+  return Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t);
+}
+
+/** Ramer–Douglas–Peucker: tiene solo i punti che si scostano più di eps dalla linea. */
+function rdp(p: Vec2[], eps: number): Vec2[] {
+  if (p.length < 3) return p.slice();
+  const keep = new Uint8Array(p.length);
+  keep[0] = keep[p.length - 1] = 1;
+  const stack: [number, number][] = [[0, p.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop()!;
+    let idx = -1, best = eps;
+    for (let i = a + 1; i < b; i++) {
+      const d = segmentDist(p[i], p[a], p[b]);
+      if (d > best) { best = d; idx = i; }
+    }
+    if (idx >= 0) {
+      keep[idx] = 1;
+      stack.push([a, idx], [idx, b]);
+    }
+  }
+  return p.filter((_, i) => keep[i]);
+}
+
+/**
+ * Semplifica un tracciato chiuso disegnato a mano (in pixel) fino ad al massimo
+ * `maxPoints` punti, aumentando la tolleranza finché serve.
+ */
+export function simplifyPath(p: Vec2[], maxPoints: number): Vec2[] {
+  const pts = p.slice();
+  // Il tracciato viene chiuso dallo shader: un ultimo punto sopra il primo è superfluo
+  while (pts.length > 3 && Math.hypot(pts[pts.length - 1].x - pts[0].x, pts[pts.length - 1].y - pts[0].y) < 3) pts.pop();
+  let eps = 1;
+  let out = rdp(pts, eps);
+  while (out.length > maxPoints) out = rdp(pts, (eps *= 1.5));
+  return out;
+}

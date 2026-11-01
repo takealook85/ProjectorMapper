@@ -24,6 +24,12 @@ const int MAX_POLY = 32;
 uniform vec2 uPoly[MAX_POLY];
 uniform int uPolyN;
 
+// Forma: 0 = contorno del poligono, 1 = ellisse inscritta, 2 = mano libera (in uv)
+const int MAX_FREE = 96;
+uniform int uShape;
+uniform vec2 uFree[MAX_FREE];
+uniform int uFreeN;
+
 out vec4 outColor;
 
 const float TAU = 6.28318530718;
@@ -52,6 +58,28 @@ float polyDist(vec2 q, float sx) {
     d = min(d, length(pa - ba * h));
   }
   return d;
+}
+
+// Distanza con segno dal bordo della forma (positiva dentro), asse x scalato di sx
+float shapeDist(vec2 q, float sx) {
+  vec2 k = vec2(sx, 1.0);
+  if (uShape == 1) {
+    // Ellisse inscritta nel quadrato uv: distanza approssimata, esatta per sx = 1
+    vec2 r = 0.5 * k;
+    return (1.0 - length((q - 0.5) * k / r)) * min(r.x, r.y);
+  }
+  float d = 1e9;
+  bool inside = false;
+  for (int i = 0; i < MAX_FREE; i++) {
+    if (i >= uFreeN) break;
+    vec2 a = uFree[i], b = uFree[i == 0 ? uFreeN - 1 : i - 1];
+    // Test pari/dispari: funziona anche con tracciati concavi o che si incrociano
+    if ((a.y > q.y) != (b.y > q.y) && q.x < (b.x - a.x) * (q.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+    vec2 ak = a * k, ba = b * k - ak, pa = q * k - ak;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-12), 0.0, 1.0);
+    d = min(d, length(pa - ba * h));
+  }
+  return inside ? d : -d;
 }
 
 // Linea antialiasata: 1 quando d < w
@@ -89,8 +117,17 @@ void main() {
   vec3 hp = uHinv * vec3(frag, 1.0);
   vec2 uv = hp.xy / hp.z;
 
-  float mask = uFeather > 0.0 ? smoothstep(0.0, uFeather, polyDist(uv, 1.0)) : 1.0;
+  float edge = polyDist(uv, 1.0);
   float ed = polyDist(uv, uAspect);
+  float shapeMask = 1.0;
+  if (uShape != 0) {
+    // La forma ritaglia il contenuto; il poligono resta il limite esterno
+    float sd = shapeDist(uv, 1.0);
+    edge = min(edge, sd);
+    ed = min(ed, abs(shapeDist(uv, uAspect)));
+    shapeMask = clamp(sd / max(fwidth(sd), 1e-6) + 0.5, 0.0, 1.0);
+  }
+  float mask = uFeather > 0.0 ? smoothstep(0.0, uFeather, edge) : shapeMask;
 
   // Trasformazione del contenuto (specchio + rotazione a passi di 90°).
   // Fuori dal quadrilatero degli angoli t esce da 0..1 e gli effetti proseguono.

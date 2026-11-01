@@ -50,6 +50,7 @@ Con **Esporta/Importa** salvi la configurazione in JSON (i file multimediali non
 | Doppio clic su un lato / I | aggiunge un vertice al poligono |
 | X | rimuove il vertice selezionato (non i 4 angoli) |
 | D | stacca un vertice condiviso |
+| Esc | annulla il disegno a mano libera / deseleziona il vertice |
 | Canc | elimina superficie |
 | Ctrl+Z | annulla |
 
@@ -59,6 +60,10 @@ Trascinando un vertice vicino a un altro si aggancia e i due diventano condivisi
 Le superfici sono poligoni fino a 32 vertici. I 4 vertici iniziali sono gli angoli prospettici
 (definiscono la prospettiva del contenuto); i vertici aggiunti modellano solo il contorno,
 ritagliando o estendendo il contenuto. Sono ammessi poligoni concavi.
+
+Dal menu **Forma** il contenuto si ritaglia con un'**ellisse inscritta** nel quadrilatero degli angoli
+oppure con una sagoma **a mano libera** (si traccia trascinando il mouse sull'area di proiezione;
+Esc annulla). Le forme sono salvate in coordinate della faccia e seguono la prospettiva.
 
 ## Struttura
 

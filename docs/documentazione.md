@@ -1,6 +1,6 @@
 # Projection Mapper – Documentazione
 
-Aggiornata al 18 ottobre 2026
+Aggiornata al 1° novembre 2026
 
 ## Indice
 
@@ -66,6 +66,14 @@ Ogni superficie è un poligono: parte come quadrilatero e puoi aggiungere altri 
 
 I quattro vertici iniziali restano gli **angoli prospettici**: definiscono la prospettiva del contenuto e non si possono rimuovere. Gli altri sono **vertici di contorno** e cambiano solo la forma: spostati verso l'interno ritagliano il contenuto, verso l'esterno lo estendono con la stessa prospettiva. Con la superficie selezionata il quadrilatero degli angoli è indicato da una linea gialla tratteggiata. Il poligono può essere concavo (per esempio a forma di L). Gli effetti che seguono i bordi (bordi al neon, cornice della griglia, sfumatura) usano il contorno del poligono; immagini e video fuori dal quadrilatero degli angoli restano neri.
 
+**Forme inscritte.** Dal menu *Forma* del pannello puoi ritagliare il contenuto con una forma inscritta nel quadrilatero dei quattro angoli prospettici, utile per disegnare sagome particolari (un oblò, un logo, una stella):
+
+- **Contorno del poligono** (predefinita): il contenuto riempie tutto il poligono.
+- **Ellisse inscritta**: il cerchio che tocca i quattro lati della faccia. Sulla superficie reale appare come un cerchio, o un'ellisse se la faccia è rettangolare; in proiezione segue la prospettiva.
+- **Mano libera**: scegliendola parte la modalità disegno (in alto compare l'avviso in azzurro). Tieni premuto il mouse e traccia il contorno sull'area di proiezione; al rilascio la forma si chiude da sola. Il tracciato viene semplificato a un massimo di 96 punti. *Ridisegna forma* lo sostituisce, Esc annulla il disegno.
+
+La forma è salvata nelle coordinate della faccia: spostando gli angoli si deforma con la prospettiva e resta inscritta. Sull'area di proiezione è indicata da una linea azzurra. Il poligono resta comunque il limite esterno, e la sfumatura dei bordi e gli effetti che seguono i bordi (bordi al neon, cornice della griglia) seguono la forma.
+
 **Spostamento.** Trascinando l'interno di una superficie si sposta tutto il gruppo collegato, per esempio l'intero cubo. Con Alt premuto si sposta solo quella superficie.
 
 **Precisione.** Le frecce spostano il vertice selezionato di 1 pixel (Shift: 10 pixel). Se nessun vertice è selezionato spostano il gruppo. **V** passa al vertice successivo della superficie selezionata, compresi i vertici di contorno.
@@ -98,6 +106,7 @@ I parametri della superficie selezionata:
 | Opacità | Trasparenza della superficie |
 | Sfumatura bordi | Ammorbidisce i bordi, utile per nascondere piccoli errori di allineamento |
 | Proporzioni L/A | Rapporto larghezza/altezza della faccia reale (1 per un cubo); evita che cerchi e griglie risultino schiacciati |
+| Forma | Contorno del poligono, ellisse inscritta o forma a mano libera (*Disegna forma* / *Ridisegna forma*) |
 
 Due pulsanti agiscono su tutta la scena: *Applica a tutte* copia effetto e parametri sulle altre superfici mantenendo i loro ritardi; *Ritardi a cascata* assegna ritardi crescenti di 0,4 secondi nell'ordine delle superfici.
 
@@ -145,7 +154,7 @@ I video partono in automatico, muti e in loop. I file vengono salvati nel browse
 
 Limiti di YouTube:
 
-- YouTube non permette di leggere i pixel del suo player, quindi il video non passa dallo shader ma viene deformato con una trasformazione CSS. Per questo sta sempre sopra gli effetti generati e non supporta la sfumatura dei bordi.
+- YouTube non permette di leggere i pixel del suo player, quindi il video non passa dallo shader ma viene deformato con una trasformazione CSS. Per questo sta sempre sopra gli effetti generati e non supporta la sfumatura dei bordi. Le forme inscritte funzionano (ritaglio CSS), ma con una forma attiva il ritaglio segue solo la forma e non più il poligono.
 - Il video parte muto perché i browser bloccano l'avvio automatico con l'audio.
 - All'avvio YouTube mostra per qualche secondo titolo e logo.
 - Serve una connessione internet, e i video con incorporamento disattivato dal proprietario non partono.
@@ -172,6 +181,7 @@ I tasti funzionano quando il cursore non è in un campo di testo; Esc esce dal c
 | I | Aggiunge un vertice a metà del lato dopo il vertice selezionato |
 | X | Rimuove il vertice selezionato (non i 4 angoli) |
 | D | Stacca il vertice condiviso selezionato |
+| Trascina in modalità disegno | Traccia la forma a mano libera (Esc annulla) |
 | Canc | Elimina la superficie selezionata |
 | Esc | Deseleziona il vertice |
 | Ctrl+Z | Annulla |
@@ -182,7 +192,7 @@ La scena si salva da sola nel browser circa 0,3 secondi dopo ogni modifica; alla
 
 | Cosa | Dove viene salvato | Incluso nell'esportazione |
 | --- | --- | --- |
-| Superfici, vertici, effetti, parametri | localStorage del browser | Sì |
+| Superfici, vertici, forme, effetti, parametri | localStorage del browser | Sì |
 | Link YouTube | localStorage del browser | Sì |
 | Immagini e video caricati | IndexedDB del browser | No |
 
@@ -246,11 +256,13 @@ Ogni superficie è descritta da un'omografia H, una matrice 3×3 che porta il qu
 
 Gli otto coefficienti si ricavano in forma chiusa dai quattro angoli (metodo di Heckbert, in `geometry.ts`). La matrice si calcola dai quattro angoli prospettici; il poligono completo viene triangolato (*ear clipping*) e disegnato, e lo shader usa l'inversa: per ogni pixel dello schermo calcola le coordinate (u, v) del contenuto e decide il colore. Fuori dal quadrilatero degli angoli (u, v) escono da 0..1 e gli effetti proseguono. Il contorno, portato anch'esso in coordinate (u, v), serve per la sfumatura e per gli effetti che seguono i bordi. Così la prospettiva è esatta, senza la piega lungo la diagonale tipica del mapping su due triangoli. Il livello YouTube applica la stessa matrice come trasformazione CSS `matrix3d` e ritaglia il poligono con `clip-path`.
 
+Le forme inscritte sono definite direttamente in coordinate (u, v): l'ellisse è il cerchio di raggio 0,5 centrato in (0,5; 0,5), la forma a mano libera è un elenco di punti (u, v) passato allo shader come array uniform (`uFree`, fino a 96 punti). Lo shader calcola la distanza con segno dal bordo della forma (per la mano libera con il test pari/dispari), la usa come maschera antialiasata e la combina con la distanza dal contorno per sfumatura ed effetti sui bordi. Il tracciato a mano libera viene disegnato in pixel, semplificato con l'algoritmo di Ramer–Douglas–Peucker e convertito in (u, v) con l'omografia inversa.
+
 ### Struttura dei file
 
 | File | Contenuto |
 | --- | --- |
-| `src/geometry.ts` | Omografia, inversione, validità del poligono, triangolazione, test di appartenenza |
+| `src/geometry.ts` | Omografia, inversione, validità del poligono, triangolazione, test di appartenenza, semplificazione dei tracciati |
 | `src/state.ts` | Modello della scena, elenco effetti, preset cubo, aggancio, distacco, inserimento e rimozione dei vertici, salvataggio |
 | `src/shaders.ts` | Shader WebGL2 con tutti gli effetti generati |
 | `src/renderer.ts` | Disegno delle superfici e gestione delle texture |

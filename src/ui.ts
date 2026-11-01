@@ -1,5 +1,5 @@
 import type { App } from './app';
-import { EFFECTS, MAX_VERTICES, type Content, type EffectId, type Surface } from './state';
+import { EFFECTS, MAX_VERTICES, SHAPES, type Content, type EffectId, type ShapeId, type Surface } from './state';
 import { parseYouTube } from './youtube';
 
 type Child = Node | string | null | false | undefined;
@@ -244,6 +244,19 @@ export class Panel {
         },
       })),
 
+      field('Forma', h('select', {
+        title: 'Forma inscritta nel quadrilatero dei 4 angoli prospettici: segue la stessa prospettiva',
+        onchange: (e: Event) => app.setShape((e.target as HTMLSelectElement).value as ShapeId),
+      }, ...SHAPES.map((x) => h('option', { value: x.id, selected: x.id === s.shape }, x.label)))),
+      s.shape === 'free' && h('div', { class: 'buttons' },
+        app.drawing
+          ? h('button', { class: 'primary', onclick: () => app.cancelDrawing(), title: 'Esc' }, 'Annulla disegno')
+          : h('button', { onclick: () => app.startDrawing() }, s.freeform.length >= 3 ? '✎ Ridisegna forma' : '✎ Disegna forma'),
+      ),
+      s.shape === 'free' && h('p', { class: 'hint' }, app.drawing
+        ? 'Tieni premuto e traccia il contorno sull’area di proiezione: la forma si chiude da sola al rilascio.'
+        : s.freeform.length >= 3 ? `Forma di ${s.freeform.length} punti.` : 'Nessuna forma disegnata: la superficie usa il contorno del poligono.'),
+
       h('div', { class: 'buttons' },
         h('button', {
           title: 'Copia effetto, colori e parametri su tutte le superfici',
@@ -287,6 +300,7 @@ export class Panel {
       ['Doppio clic su un lato', 'aggiunge un vertice (I: a metà del lato dopo quello selezionato)'],
       ['X', 'rimuove il vertice selezionato (non i 4 angoli)'],
       ['D', 'stacca il vertice condiviso selezionato'],
+      ['Forma → Mano libera', 'trascina per disegnare il contorno (Esc annulla)'],
       ['H', 'nascondi/mostra interfaccia (modalità show)'],
       ['F · B · G', 'schermo intero · blackout · griglia su tutto'],
       ['Ctrl+Z · Canc', 'annulla · elimina superficie'],

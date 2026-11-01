@@ -1,7 +1,7 @@
 import { applyH, surfaceMapping, toColumnMajor, triangulate } from './geometry';
 import { mediaSize, type MediaLibrary } from './media';
 import { FRAG, VERT } from './shaders';
-import { effectIndex, surfacePoints, type Scene } from './state';
+import { effectIndex, MAX_FREEFORM, surfacePoints, type Scene } from './state';
 
 export interface RenderOptions {
   time: number;
@@ -13,7 +13,7 @@ export interface RenderOptions {
 const UNIFORMS = [
   'uHinv', 'uRes', 'uTime', 'uSpeed', 'uScale', 'uDelay', 'uOpacity', 'uFeather', 'uAspect',
   'uTexAspect', 'uMaster', 'uEffect', 'uRot', 'uFlip', 'uFit', 'uHasTex', 'uC1', 'uC2', 'uTex',
-  'uPoly', 'uPolyN',
+  'uPoly', 'uPolyN', 'uShape', 'uFree', 'uFreeN',
 ] as const;
 
 type UniformMap = Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null>;
@@ -136,6 +136,12 @@ export class Renderer {
       gl.uniformMatrix3fv(this.u.uHinv, false, toColumnMajor(inv));
       gl.uniform2fv(this.u.uPoly, px.flatMap((p) => { const q = applyH(inv, p.x, p.y); return [q.x, q.y]; }));
       gl.uniform1i(this.u.uPolyN, px.length);
+      const free = s.shape === 'free' && s.freeform.length >= 3;
+      gl.uniform1i(this.u.uShape, s.shape === 'ellipse' ? 1 : free ? 2 : 0);
+      if (free) {
+        gl.uniform2fv(this.u.uFree, s.freeform.slice(0, MAX_FREEFORM).flatMap((q) => [q.x, q.y]));
+        gl.uniform1i(this.u.uFreeN, Math.min(s.freeform.length, MAX_FREEFORM));
+      }
       gl.uniform1i(this.u.uEffect, effect);
       gl.uniform1f(this.u.uSpeed, c.speed);
       gl.uniform1f(this.u.uScale, Math.max(c.scale, 0.05));
